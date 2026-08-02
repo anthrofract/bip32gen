@@ -8,8 +8,6 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::cli::{Config, WordCount};
 
 pub(crate) fn collect_entropy(config: &Config) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    info!("Collecting entropy");
-
     let byte_count = config.words.entropy_bytes();
     let mut sources = Vec::with_capacity(3);
 
@@ -169,7 +167,7 @@ fn combine_entropy(
 }
 
 impl WordCount {
-    fn entropy_bytes(self) -> usize {
+    pub(crate) fn entropy_bytes(self) -> usize {
         match self {
             Self::Twelve => 16,
             Self::Eighteen => 24,

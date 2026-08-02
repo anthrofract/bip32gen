@@ -176,9 +176,11 @@ pub(crate) fn init_logging() {
 }
 
 pub(crate) fn parse() -> Config {
-    Config::try_from(Cli::parse()).unwrap_or_else(|error| {
+    let config = Config::try_from(Cli::parse()).unwrap_or_else(|error| {
         Cli::command()
             .error(ErrorKind::ValueValidation, error.to_string())
             .exit()
-    })
+    });
+    log::debug!("{config:#?}");
+    config
 }

@@ -12,6 +12,13 @@ use log::info;
 use zeroize::Zeroizing;
 
 pub(crate) fn run(config: crate::cli::Config) -> anyhow::Result<()> {
+    let byte_count = config.words.entropy_bytes();
+    info!(
+        "Generating a {}-word mnemonic from {byte_count} bytes ({} bits) of entropy",
+        config.words.word_count(),
+        byte_count * 8
+    );
+
     let entropy = crate::entropy::collect_entropy(&config)?;
     let mnemonic = generate_mnemonic(&entropy)?;
     write_output(&config, &mnemonic)
@@ -102,6 +109,16 @@ fn write_file(output_path: &Path, contents: &[u8], overwrite: bool) -> anyhow::R
     file.write_all(contents)
         .with_context(|| format!("failed to write output file '{}'", output_path.display()))?;
 
-    info!("Output written successfully to '{}'", output_path.display());
+    info!("Successfully wrote mnemonic to '{}'", output_path.display());
     Ok(())
+}
+
+impl crate::cli::WordCount {
+    fn word_count(self) -> usize {
+        match self {
+            Self::Twelve => 12,
+            Self::Eighteen => 18,
+            Self::TwentyFour => 24,
+        }
+    }
 }
