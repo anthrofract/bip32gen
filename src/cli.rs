@@ -2,6 +2,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
+    process::{Command, Stdio},
 };
 
 use anyhow::{Context, ensure};
@@ -81,6 +82,14 @@ impl TryFrom<Cli> for Config {
             "at least one entropy source must be enabled"
         );
 
+        // Check optional runtime dependencies before collecting any entropy.
+        if cli.yubikey_entropy {
+            validate_command("gpg-connect-agent")?;
+        }
+        if cli.gpg_pubkey.is_some() {
+            validate_command("gpg")?;
+        }
+
         let output_path = cli.output.unwrap_or_else(|| {
             PathBuf::from(if cli.gpg_pubkey.is_some() {
                 "seed.txt.asc"
@@ -142,6 +151,22 @@ impl TryFrom<Cli> for Config {
             overwrite: cli.force,
         })
     }
+}
+
+fn validate_command(command: &str) -> anyhow::Result<()> {
+    let status = Command::new(command)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .with_context(|| format!("required command '{command}' was not found on PATH"))?;
+
+    ensure!(
+        status.success(),
+        "required command '{command}' failed with status {status}"
+    );
+    Ok(())
 }
 
 pub(crate) fn init_logging() {

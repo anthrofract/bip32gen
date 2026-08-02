@@ -1,4 +1,6 @@
-use anyhow::{Context, ensure};
+use std::{io, process::Command};
+
+use anyhow::{Context, bail, ensure};
 use log::info;
 use sha3::{Digest, Sha3_256};
 use zeroize::{Zeroize, Zeroizing};
@@ -32,8 +34,108 @@ fn collect_os_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
     Ok(entropy)
 }
 
-fn collect_yubikey_entropy(_byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    todo!()
+fn collect_yubikey_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+    info!("Collecting {byte_count} bytes of YubiKey entropy");
+
+    loop {
+        match try_collect_yubikey_entropy(byte_count) {
+            Ok(entropy) => return Ok(entropy),
+            Err(error) => {
+                info!("Unable to collect YubiKey entropy: {error:#}");
+                info!("Connect exactly one compatible smart card and press Enter to retry");
+
+                let mut input = String::new();
+                ensure!(
+                    io::stdin()
+                        .read_line(&mut input)
+                        .context("failed to wait for Enter")?
+                        != 0,
+                    "standard input closed while waiting to retry"
+                );
+            }
+        }
+    }
+}
+
+fn try_collect_yubikey_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+    run_gpg_connect_agent(&["SCD SERIALNO", "/bye"]).context("failed to scan for smart cards")?;
+
+    let output = run_gpg_connect_agent(&["SCD GETINFO card_list", "/bye"])
+        .context("failed to list smart cards")?;
+    let output = str::from_utf8(&output.stdout).context("invalid smart card list from GPG")?;
+    let serials = output
+        .lines()
+        .filter_map(|line| line.strip_prefix("S SERIALNO "))
+        .collect::<Vec<_>>();
+
+    ensure!(
+        serials.len() == 1,
+        "expected exactly one smart card, found {}",
+        serials.len()
+    );
+    let serial = serials[0];
+    ensure!(
+        !serial.is_empty() && serial.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "GPG returned an invalid smart card serial number"
+    );
+
+    let select = format!("SCD SERIALNO --demand={serial} openpgp");
+    let random = format!("SCD RANDOM {byte_count}");
+    let output = Command::new("gpg-connect-agent")
+        .arg("--no-history")
+        .arg("/datafile -")
+        .arg(select)
+        .arg(random)
+        .arg("/bye")
+        .output()
+        .context("failed to start gpg-connect-agent")?;
+    let entropy = Zeroizing::new(output.stdout);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            bail!("gpg-connect-agent failed with status {}", output.status);
+        }
+        bail!("gpg-connect-agent failed: {stderr}");
+    }
+
+    ensure!(
+        entropy.len() == byte_count,
+        "GPG returned {} bytes of smart card entropy instead of {byte_count}",
+        entropy.len()
+    );
+    Ok(entropy)
+}
+
+fn run_gpg_connect_agent(commands: &[&str]) -> anyhow::Result<std::process::Output> {
+    let output = Command::new("gpg-connect-agent")
+        .arg("--no-history")
+        .args(commands)
+        .output()
+        .context("failed to start gpg-connect-agent")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            bail!("gpg-connect-agent failed with status {}", output.status);
+        }
+        bail!("gpg-connect-agent failed: {stderr}");
+    }
+
+    if let Some(error) = output
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.starts_with(b"ERR "))
+    {
+        bail!(
+            "GPG card command failed: {}",
+            String::from_utf8_lossy(error)
+        );
+    }
+
+    Ok(output)
 }
 
 fn collect_dice_entropy(_byte_count: usize, _sides: u32) -> anyhow::Result<Zeroizing<Vec<u8>>> {
