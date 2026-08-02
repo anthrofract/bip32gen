@@ -47,19 +47,18 @@ struct Cli {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub(crate) struct Config {
-    os_entropy: bool,
-    dice_entropy: Option<u32>,
-    yubikey_entropy: bool,
-    words: WordCount,
-    gpg_pubkey: Option<PathBuf>,
-    output_path: PathBuf,
-    overwrite: bool,
+    pub(crate) os_entropy: bool,
+    pub(crate) dice_entropy: Option<u32>,
+    pub(crate) yubikey_entropy: bool,
+    pub(crate) words: WordCount,
+    pub(crate) gpg_pubkey: Option<PathBuf>,
+    pub(crate) output_path: PathBuf,
+    pub(crate) overwrite: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-enum WordCount {
+pub(crate) enum WordCount {
     #[value(name = "12")]
     Twelve,
     #[value(name = "18")]
