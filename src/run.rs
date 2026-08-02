@@ -1,13 +1,14 @@
-use std::path::Path;
+use std::{fmt::Write, path::Path};
 
+use bip39::Mnemonic;
 use zeroize::Zeroizing;
 
 use crate::cli::{Config, WordCount};
 
 pub(crate) fn run(config: Config) -> anyhow::Result<()> {
     let entropy = collect_entropy(&config)?;
-    let seed_phrase = generate_seed_phrase(&entropy)?;
-    write_output(&config, &seed_phrase)
+    let mnemonic = generate_mnemonic(&entropy)?;
+    write_output(&config, &mnemonic)
 }
 
 fn collect_entropy(config: &Config) -> anyhow::Result<Zeroizing<Vec<u8>>> {
@@ -46,13 +47,20 @@ fn combine_entropy(
     todo!()
 }
 
-fn generate_seed_phrase(_entropy: &[u8]) -> anyhow::Result<Zeroizing<String>> {
+fn generate_mnemonic(_entropy: &[u8]) -> anyhow::Result<Mnemonic> {
     todo!()
 }
 
-fn write_output(config: &Config, seed_phrase: &str) -> anyhow::Result<()> {
+fn write_output(config: &Config, mnemonic: &Mnemonic) -> anyhow::Result<()> {
+    let words = mnemonic.words();
+    let capacity = words.clone().map(|word| word.len() + 1).sum();
+    let mut seed_phrase = Zeroizing::new(String::with_capacity(capacity));
+    for word in words {
+        writeln!(&mut *seed_phrase, "{word}")?;
+    }
+
     if let Some(gpg_pubkey) = &config.gpg_pubkey {
-        let encrypted = encrypt_with_gpg(seed_phrase, gpg_pubkey)?;
+        let encrypted = encrypt_with_gpg(&seed_phrase, gpg_pubkey)?;
         write_file(&config.output_path, &encrypted, config.overwrite)
     } else {
         write_file(
