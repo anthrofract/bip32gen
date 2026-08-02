@@ -14,18 +14,19 @@ use crate::secret_string::SecretString;
 pub(crate) fn run(config: crate::cli::Config) -> anyhow::Result<()> {
     let byte_count = config.words.entropy_bytes();
     info!(
-        "Generating a {}-word mnemonic from {byte_count} bytes ({} bits) of entropy",
+        "Generating a {}-word mnemonic from {} bits ({} bytes) of entropy.",
         config.words.word_count(),
-        byte_count * 8
+        byte_count * 8,
+        byte_count,
     );
 
     let entropy = crate::entropy::collect_entropy(&config)?;
-    let mnemonic = generate_mnemonic(&entropy)?;
+    let mnemonic = construct_mnemonic(&entropy)?;
     write_output(&config, &mnemonic)
 }
 
-fn generate_mnemonic(entropy: &[u8]) -> anyhow::Result<Mnemonic> {
-    info!("Generating BIP-39 mnemonic");
+fn construct_mnemonic(entropy: &[u8]) -> anyhow::Result<Mnemonic> {
+    info!("Constructing mnemonic...");
     Mnemonic::from_entropy(entropy).context("failed to generate BIP-39 mnemonic")
 }
 
@@ -108,7 +109,10 @@ fn write_file(output_path: &Path, contents: &[u8], overwrite: bool) -> anyhow::R
     file.write_all(contents)
         .with_context(|| format!("failed to write output file '{}'", output_path.display()))?;
 
-    info!("Successfully wrote mnemonic to '{}'", output_path.display());
+    info!(
+        "Successfully wrote mnemonic to '{}'.",
+        output_path.display()
+    );
     Ok(())
 }
 

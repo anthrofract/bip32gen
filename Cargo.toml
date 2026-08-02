@@ -9,6 +9,7 @@ license = "MIT"
 anyhow = "1.0.104"
 bip39 = { version = "2.2.2", features = ["zeroize"] }
 clap = { version = "4.6.5", features = ["derive"] }
+crypto-bigint = { version = "0.7.5", default-features = false, features = ["zeroize"] }
 env_logger = "0.11.11"
 getrandom = "0.4.3"
 log = "0.4.33"
