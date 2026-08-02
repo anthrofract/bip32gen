@@ -10,5 +10,7 @@ anyhow = "1.0.104"
 bip39 = { version = "2.2.2", features = ["zeroize"] }
 clap = { version = "4.6.5", features = ["derive"] }
 env_logger = "0.11.11"
+getrandom = "0.4.3"
 log = "0.4.33"
+sha3 = { version = "0.12.0", features = ["zeroize"] }
 zeroize = "1.9.0"

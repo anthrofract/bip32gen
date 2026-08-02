@@ -1,4 +1,5 @@
 mod cli;
+mod entropy;
 mod run;
 
 fn main() -> anyhow::Result<()> {

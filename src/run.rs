@@ -11,50 +11,10 @@ use bip39::Mnemonic;
 use log::info;
 use zeroize::Zeroizing;
 
-use crate::cli::{Config, WordCount};
-
-pub(crate) fn run(config: Config) -> anyhow::Result<()> {
-    let entropy = collect_entropy(&config)?;
+pub(crate) fn run(config: crate::cli::Config) -> anyhow::Result<()> {
+    let entropy = crate::entropy::collect_entropy(&config)?;
     let mnemonic = generate_mnemonic(&entropy)?;
     write_output(&config, &mnemonic)
-}
-
-fn collect_entropy(config: &Config) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    info!("Collecting entropy");
-
-    let byte_count = config.words.entropy_bytes();
-    let mut sources = Vec::with_capacity(3);
-
-    if config.os_entropy {
-        sources.push(("os", collect_os_entropy(byte_count)?));
-    }
-    if let Some(sides) = config.dice_entropy {
-        sources.push(("dice", collect_dice_entropy(sides, byte_count * 8)?));
-    }
-    if config.yubikey_entropy {
-        sources.push(("yubikey", collect_yubikey_entropy(byte_count)?));
-    }
-
-    Ok(combine_entropy(&sources, byte_count))
-}
-
-fn collect_os_entropy(_byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    todo!()
-}
-
-fn collect_dice_entropy(_sides: u32, _bit_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    todo!()
-}
-
-fn collect_yubikey_entropy(_byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    todo!()
-}
-
-fn combine_entropy(
-    _sources: &[(&str, Zeroizing<Vec<u8>>)],
-    _byte_count: usize,
-) -> Zeroizing<Vec<u8>> {
-    todo!()
 }
 
 fn generate_mnemonic(entropy: &[u8]) -> anyhow::Result<Mnemonic> {
@@ -62,7 +22,7 @@ fn generate_mnemonic(entropy: &[u8]) -> anyhow::Result<Mnemonic> {
     Mnemonic::from_entropy(entropy).context("failed to generate BIP-39 mnemonic")
 }
 
-fn write_output(config: &Config, mnemonic: &Mnemonic) -> anyhow::Result<()> {
+fn write_output(config: &crate::cli::Config, mnemonic: &Mnemonic) -> anyhow::Result<()> {
     let words = mnemonic.words();
     let capacity = words.clone().map(|word| word.len() + 1).sum();
     let mut seed_phrase = Zeroizing::new(String::with_capacity(capacity));
@@ -144,14 +104,4 @@ fn write_file(output_path: &Path, contents: &[u8], overwrite: bool) -> anyhow::R
 
     info!("Output written successfully to '{}'", output_path.display());
     Ok(())
-}
-
-impl WordCount {
-    fn entropy_bytes(self) -> usize {
-        match self {
-            Self::Twelve => 16,
-            Self::Eighteen => 24,
-            Self::TwentyFour => 32,
-        }
-    }
 }
