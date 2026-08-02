@@ -1,6 +1,14 @@
-use std::{fmt::Write, path::Path};
+use std::{
+    fmt::Write as _,
+    fs::OpenOptions,
+    io::Write as _,
+    path::Path,
+    process::{Command, Stdio},
+};
 
+use anyhow::{Context, bail};
 use bip39::Mnemonic;
+use log::info;
 use zeroize::Zeroizing;
 
 use crate::cli::{Config, WordCount};
@@ -12,6 +20,8 @@ pub(crate) fn run(config: Config) -> anyhow::Result<()> {
 }
 
 fn collect_entropy(config: &Config) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+    info!("Collecting entropy");
+
     let byte_count = config.words.entropy_bytes();
     let mut sources = Vec::with_capacity(3);
 
@@ -47,8 +57,9 @@ fn combine_entropy(
     todo!()
 }
 
-fn generate_mnemonic(_entropy: &[u8]) -> anyhow::Result<Mnemonic> {
-    todo!()
+fn generate_mnemonic(entropy: &[u8]) -> anyhow::Result<Mnemonic> {
+    info!("Generating BIP-39 mnemonic");
+    Mnemonic::from_entropy(entropy).context("failed to generate BIP-39 mnemonic")
 }
 
 fn write_output(config: &Config, mnemonic: &Mnemonic) -> anyhow::Result<()> {
@@ -71,12 +82,68 @@ fn write_output(config: &Config, mnemonic: &Mnemonic) -> anyhow::Result<()> {
     }
 }
 
-fn encrypt_with_gpg(_seed_phrase: &str, _gpg_pubkey: &Path) -> anyhow::Result<Vec<u8>> {
-    todo!()
+fn encrypt_with_gpg(seed_phrase: &str, gpg_pubkey: &Path) -> anyhow::Result<Vec<u8>> {
+    info!("Encrypting seed phrase with GPG");
+
+    let mut child = Command::new("gpg")
+        .args([
+            "--no-options",
+            "--batch",
+            "--no-tty",
+            "--armor",
+            "--always-trust",
+            "--encrypt",
+            "--recipient-file",
+        ])
+        .arg(gpg_pubkey)
+        .args(["--output", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to start GPG")?;
+
+    let write_result = child
+        .stdin
+        .take()
+        .context("failed to open GPG stdin")?
+        .write_all(seed_phrase.as_bytes());
+    if let Err(error) = write_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error).context("failed to send seed phrase to GPG");
+    }
+
+    let output = child.wait_with_output().context("failed to wait for GPG")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            bail!("GPG encryption failed with status {}", output.status);
+        }
+        bail!("GPG encryption failed: {stderr}");
+    }
+
+    Ok(output.stdout)
 }
 
-fn write_file(_output_path: &Path, _contents: &[u8], _overwrite: bool) -> anyhow::Result<()> {
-    todo!()
+fn write_file(output_path: &Path, contents: &[u8], overwrite: bool) -> anyhow::Result<()> {
+    let mut options = OpenOptions::new();
+    options.write(true);
+    if overwrite {
+        options.create(true).truncate(true);
+    } else {
+        options.create_new(true);
+    }
+
+    let mut file = options
+        .open(output_path)
+        .with_context(|| format!("failed to open output file '{}'", output_path.display()))?;
+    file.write_all(contents)
+        .with_context(|| format!("failed to write output file '{}'", output_path.display()))?;
+
+    info!("Output written successfully to '{}'", output_path.display());
+    Ok(())
 }
 
 impl WordCount {
