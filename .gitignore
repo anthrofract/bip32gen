@@ -1,0 +1,11 @@
+# Ignore everything by default
+*
+
+!.gitignore
+!Cargo.lock
+!Cargo.toml
+!Justfile
+!LICENSE
+!README.md
+!src/
+!src/**
