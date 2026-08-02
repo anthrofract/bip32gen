@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 use clap::{ArgAction, CommandFactory, Parser, ValueEnum, error::ErrorKind};
+use log::info;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -72,9 +73,15 @@ impl Cli {
 }
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format(|buffer, record| writeln!(buffer, "{}", record.args()))
+        .init();
+
     let cli = Cli::parse();
 
     if let Err(error) = cli.validate() {
         error.exit();
     }
+
+    info!("{cli:#?}");
 }
