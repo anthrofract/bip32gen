@@ -5,6 +5,9 @@ edition = "2024"
 rust-version = "1.96"
 license = "MIT"
 
+[package.metadata.bip39gen]
+supported-operating-systems = ["linux", "macos"]
+
 [dependencies]
 anyhow = "1.0.104"
 bip39 = { version = "2.2.2", features = ["zeroize"] }

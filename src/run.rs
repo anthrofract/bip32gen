@@ -15,7 +15,10 @@ use crate::secret_string::SecretString;
 pub(crate) fn run(config: crate::cli::Config) -> anyhow::Result<()> {
     let byte_count = config.words.entropy_bytes();
     info!(
-        "Generating a {}-word mnemonic from {} bits ({} bytes) of entropy.",
+        "Warning: Run this program only in a trusted, ephemeral, offline environment, such as in Tails OS."
+    );
+    info!(
+        "Generating a {}-word mnemonic from {} bits ({} bytes) of entropy per source.",
         config.words.word_count(),
         byte_count * 8,
         byte_count,
@@ -38,8 +41,8 @@ fn write_output(config: &crate::cli::Config, mnemonic: &Mnemonic) -> anyhow::Res
         seed_phrase.push_str("\n")?;
     }
 
-    if let Some(gpg_pubkey) = &config.gpg_pubkey {
-        let encrypted = encrypt_with_gpg(&seed_phrase, gpg_pubkey)?;
+    if let Some(pgp_pubkey) = &config.pgp_pubkey {
+        let encrypted = encrypt_with_gpg(&seed_phrase, pgp_pubkey)?;
         write_file(&config.output_path, &encrypted, config.overwrite)
     } else {
         write_file(
@@ -50,7 +53,7 @@ fn write_output(config: &crate::cli::Config, mnemonic: &Mnemonic) -> anyhow::Res
     }
 }
 
-fn encrypt_with_gpg(seed_phrase: &str, gpg_pubkey: &Path) -> anyhow::Result<Vec<u8>> {
+fn encrypt_with_gpg(seed_phrase: &str, pgp_pubkey: &Path) -> anyhow::Result<Vec<u8>> {
     info!("Encrypting seed phrase with GPG");
 
     let mut child = Command::new("gpg")
@@ -63,7 +66,7 @@ fn encrypt_with_gpg(seed_phrase: &str, gpg_pubkey: &Path) -> anyhow::Result<Vec<
             "--encrypt",
             "--recipient-file",
         ])
-        .arg(gpg_pubkey)
+        .arg(pgp_pubkey)
         .args(["--output", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -117,6 +120,8 @@ fn write_file(output_path: &Path, contents: &[u8], overwrite: bool) -> anyhow::R
         })?;
     file.write_all(contents)
         .with_context(|| format!("failed to write output file '{}'", output_path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("failed to sync output file '{}'", output_path.display()))?;
 
     info!(
         "Successfully wrote mnemonic to '{}'.",
@@ -160,11 +165,12 @@ mod tests {
         );
 
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-        write_file(&path, b"test", true).unwrap();
+        write_file(&path, b"replacement", true).unwrap();
         assert_eq!(
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
         );
+        assert_eq!(fs::read(&path).unwrap(), b"replacement");
 
         fs::remove_file(path).unwrap();
     }

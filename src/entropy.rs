@@ -21,8 +21,8 @@ pub(crate) fn collect_entropy(config: &Config) -> anyhow::Result<Zeroizing<Vec<u
     if config.os_entropy {
         sources.push(collect_os_entropy(byte_count)?);
     }
-    if config.yubikey_entropy {
-        sources.push(collect_yubikey_entropy(byte_count)?);
+    if config.openpgp_card_entropy {
+        sources.push(collect_openpgp_card_entropy(byte_count)?);
     }
     if let Some(sides) = config.dice_entropy {
         sources.push(collect_dice_entropy(byte_count, sides)?);
@@ -39,15 +39,18 @@ fn collect_os_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
     Ok(entropy)
 }
 
-fn collect_yubikey_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    info!("Collecting {} bits of YubiKey entropy...", byte_count * 8);
+fn collect_openpgp_card_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+    info!(
+        "Collecting {} bits of OpenPGP smart card entropy...",
+        byte_count * 8
+    );
 
     loop {
-        match try_collect_yubikey_entropy(byte_count) {
+        match try_collect_openpgp_card_entropy(byte_count) {
             Ok(entropy) => return Ok(entropy),
             Err(error) => {
-                info!("Unable to collect YubiKey entropy: {error:#}");
-                info!("Connect exactly one compatible smart card and press Enter to retry");
+                info!("Unable to collect OpenPGP smart card entropy: {error:#}");
+                info!("Connect exactly one OpenPGP smart card and press Enter to retry");
 
                 let mut input = String::new();
                 ensure!(
@@ -62,7 +65,7 @@ fn collect_yubikey_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8
     }
 }
 
-fn try_collect_yubikey_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
+fn try_collect_openpgp_card_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
     run_gpg_connect_agent(&["SCD SERIALNO", "/bye"]).context("failed to scan for smart cards")?;
 
     let output = run_gpg_connect_agent(&["SCD GETINFO card_list", "/bye"])
@@ -148,8 +151,9 @@ fn collect_dice_entropy(byte_count: usize, sides: u32) -> anyhow::Result<Zeroizi
 
     let bit_count = byte_count * 8;
     let expected_rolls = expected_dice_rolls(byte_count, sides);
-    info!("Collecting {bit_count} bits of entropy using a d{sides}...");
+    info!("Collecting {bit_count} bits of dice entropy using d{sides} rolls...");
     info!("Enter dice rolls separated by spaces:");
+    info!("Warning: Dice rolls are visible and may remain in terminal scrollback or session logs.");
 
     let mut value = Zeroizing::new(U512::ZERO);
     let mut range = Zeroizing::new(U512::ONE);
@@ -158,8 +162,8 @@ fn collect_dice_entropy(byte_count: usize, sides: u32) -> anyhow::Result<Zeroizi
     loop {
         let rolls = prompt_for_dice_rolls(entered, expected_rolls, sides)?;
 
-        entered += rolls.len();
         for roll in rolls.iter().copied() {
+            entered += 1;
             if let Some(entropy) = add_dice_roll(&mut value, &mut range, roll, sides, byte_count) {
                 info!("{}: Finished.", roll_status(entered, expected_rolls, sides));
                 return Ok(entropy);
@@ -268,7 +272,11 @@ fn combine_entropy(
     sources: &[Zeroizing<Vec<u8>>],
     byte_count: usize,
 ) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    info!("Combining entropy from {} sources...", sources.len());
+    info!(
+        "Combining entropy from {} sources to produce {} bits of final entropy...",
+        sources.len(),
+        byte_count * 8
+    );
 
     ensure!(!sources.is_empty(), "no entropy sources were provided");
 

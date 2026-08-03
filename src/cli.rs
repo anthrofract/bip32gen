@@ -1,6 +1,7 @@
 use std::{
     fs::{self, File, OpenOptions},
     io::Write,
+    os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -26,9 +27,9 @@ struct Cli {
     #[arg(long, value_parser = clap::value_parser!(u32).range(2..))]
     dice_sides: Option<u32>,
 
-    /// Use entropy from a YubiKey
-    #[arg(long = "yubikey", default_value_t = true, action = ArgAction::Set)]
-    yubikey_entropy: bool,
+    /// Use entropy from an OpenPGP smart card such as a YubiKey
+    #[arg(long = "openpgp-card", default_value_t = true, action = ArgAction::Set)]
+    openpgp_card_entropy: bool,
 
     /// Number of words in the generated mnemonic
     #[arg(long, default_value = "12")]
@@ -36,7 +37,7 @@ struct Cli {
 
     /// OpenPGP public key used to encrypt the mnemonic with GPG
     #[arg(long, value_name = "PATH")]
-    gpg_pubkey: Option<PathBuf>,
+    pgp_pubkey: Option<PathBuf>,
 
     /// Output path (defaults to seed.txt or seed.txt.asc when encrypted)
     #[arg(short, long, value_name = "PATH")]
@@ -50,10 +51,10 @@ struct Cli {
 #[derive(Debug)]
 pub(crate) struct Config {
     pub(crate) os_entropy: bool,
+    pub(crate) openpgp_card_entropy: bool,
     pub(crate) dice_entropy: Option<u32>,
-    pub(crate) yubikey_entropy: bool,
     pub(crate) words: WordCount,
-    pub(crate) gpg_pubkey: Option<PathBuf>,
+    pub(crate) pgp_pubkey: Option<PathBuf>,
     pub(crate) output_path: PathBuf,
     pub(crate) overwrite: bool,
 }
@@ -78,20 +79,20 @@ impl TryFrom<Cli> for Config {
             "--dice-sides cannot be used when --dice is false"
         );
         ensure!(
-            cli.os_entropy || cli.dice_entropy || cli.yubikey_entropy,
+            cli.os_entropy || cli.dice_entropy || cli.openpgp_card_entropy,
             "at least one entropy source must be enabled"
         );
 
         // Check optional runtime dependencies before collecting any entropy.
-        if cli.yubikey_entropy {
+        if cli.openpgp_card_entropy {
             validate_command("gpg-connect-agent")?;
         }
-        if cli.gpg_pubkey.is_some() {
+        if cli.pgp_pubkey.is_some() {
             validate_command("gpg")?;
         }
 
         let output_path = cli.output.unwrap_or_else(|| {
-            PathBuf::from(if cli.gpg_pubkey.is_some() {
+            PathBuf::from(if cli.pgp_pubkey.is_some() {
                 "seed.txt.asc"
             } else {
                 "seed.txt"
@@ -99,15 +100,24 @@ impl TryFrom<Cli> for Config {
         });
 
         // Fail early if encryption was requested with an unusable public key.
-        if let Some(gpg_pubkey) = &cli.gpg_pubkey {
+        if let Some(pgp_pubkey) = &cli.pgp_pubkey {
             ensure!(
-                gpg_pubkey.is_file(),
-                "GPG public key '{}' is not a file",
-                gpg_pubkey.display()
+                pgp_pubkey.is_file(),
+                "OpenPGP public key '{}' is not a file",
+                pgp_pubkey.display()
             );
-            File::open(gpg_pubkey).with_context(|| {
-                format!("cannot read GPG public key '{}'", gpg_pubkey.display())
+            let pgp_pubkey = File::open(pgp_pubkey).with_context(|| {
+                format!("cannot read OpenPGP public key '{}'", pgp_pubkey.display())
             })?;
+
+            if let Ok(output_metadata) = fs::metadata(&output_path) {
+                let key_metadata = pgp_pubkey.metadata()?;
+                ensure!(
+                    key_metadata.dev() != output_metadata.dev()
+                        || key_metadata.ino() != output_metadata.ino(),
+                    "OpenPGP public key and output must be different files"
+                );
+            }
         }
 
         // Validate the destination without creating or truncating the output file.
@@ -144,9 +154,9 @@ impl TryFrom<Cli> for Config {
         Ok(Self {
             os_entropy: cli.os_entropy,
             dice_entropy: cli.dice_entropy.then(|| cli.dice_sides.unwrap_or(6)),
-            yubikey_entropy: cli.yubikey_entropy,
+            openpgp_card_entropy: cli.openpgp_card_entropy,
             words: cli.words,
-            gpg_pubkey: cli.gpg_pubkey,
+            pgp_pubkey: cli.pgp_pubkey,
             output_path,
             overwrite: cli.force,
         })
