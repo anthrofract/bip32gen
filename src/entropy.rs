@@ -184,18 +184,19 @@ fn prompt_for_dice_rolls(
         writeln!(io::stderr()).context("failed to finish dice prompt")?;
     }
 
-    let rolls = input
-        .split_ascii_whitespace()
-        .map(str::parse::<u32>)
-        .collect::<Result<Vec<_>, _>>();
-    let Ok(rolls) = rolls else {
-        bail!("invalid input; every roll must be between 1 and {sides}");
-    };
-    ensure!(
-        rolls.iter().all(|roll| (1..=sides).contains(roll)),
-        "invalid input; every roll must be between 1 and {sides}"
-    );
-    Ok(Zeroizing::new(rolls))
+    let mut rolls = Zeroizing::new(Vec::with_capacity(input.split_ascii_whitespace().count()));
+    for value in input.split_ascii_whitespace() {
+        let Some(roll) = value
+            .parse::<u32>()
+            .ok()
+            .filter(|roll| (1..=sides).contains(roll))
+        else {
+            info!("Invalid dice input discarded, every roll must be between 1 and {sides}.");
+            return Ok(Zeroizing::new(Vec::new()));
+        };
+        rolls.push(roll);
+    }
+    Ok(rolls)
 }
 
 fn roll_status(entered: usize, expected: f64, sides: u32) -> String {

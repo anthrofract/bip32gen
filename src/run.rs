@@ -1,6 +1,7 @@
 use std::{
     fs::OpenOptions,
     io::Write as _,
+    os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _},
     path::Path,
     process::{Command, Stdio},
 };
@@ -102,10 +103,18 @@ fn write_file(output_path: &Path, contents: &[u8], overwrite: bool) -> anyhow::R
     } else {
         options.create_new(true);
     }
+    options.mode(0o600);
 
     let mut file = options
         .open(output_path)
         .with_context(|| format!("failed to open output file '{}'", output_path.display()))?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))
+        .with_context(|| {
+            format!(
+                "failed to set permissions on output file '{}'",
+                output_path.display()
+            )
+        })?;
     file.write_all(contents)
         .with_context(|| format!("failed to write output file '{}'", output_path.display()))?;
 
@@ -123,5 +132,40 @@ impl crate::cli::WordCount {
             Self::Eighteen => 18,
             Self::TwentyFour => 24,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt as _,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::*;
+
+    #[test]
+    fn writes_output_with_private_permissions() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("bip39gen-{nonce}"));
+
+        write_file(&path, b"test", false).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        write_file(&path, b"test", true).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        fs::remove_file(path).unwrap();
     }
 }
