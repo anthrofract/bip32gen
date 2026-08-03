@@ -1,5 +1,4 @@
 use std::{
-    fmt::Write as _,
     fs::OpenOptions,
     io::Write as _,
     path::Path,
@@ -9,7 +8,8 @@ use std::{
 use anyhow::{Context, bail};
 use bip39::Mnemonic;
 use log::info;
-use zeroize::Zeroizing;
+
+use crate::secret_string::SecretString;
 
 pub(crate) fn run(config: crate::cli::Config) -> anyhow::Result<()> {
     let byte_count = config.words.entropy_bytes();
@@ -30,11 +30,10 @@ fn generate_mnemonic(entropy: &[u8]) -> anyhow::Result<Mnemonic> {
 }
 
 fn write_output(config: &crate::cli::Config, mnemonic: &Mnemonic) -> anyhow::Result<()> {
-    let words = mnemonic.words();
-    let capacity = words.clone().map(|word| word.len() + 1).sum();
-    let mut seed_phrase = Zeroizing::new(String::with_capacity(capacity));
-    for word in words {
-        writeln!(&mut *seed_phrase, "{word}")?;
+    let mut seed_phrase = SecretString::new();
+    for word in mnemonic.words() {
+        seed_phrase.push_str(word)?;
+        seed_phrase.push_str("\n")?;
     }
 
     if let Some(gpg_pubkey) = &config.gpg_pubkey {
