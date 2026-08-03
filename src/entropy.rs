@@ -32,7 +32,7 @@ pub(crate) fn collect_entropy(config: &Config) -> anyhow::Result<Zeroizing<Vec<u
 }
 
 fn collect_os_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
-    info!("Collecting {} bits of OS entropy...", byte_count * 8);
+    info!("💻 Collecting {} bits of OS entropy...", byte_count * 8);
 
     let mut entropy = Zeroizing::new(vec![0; byte_count]);
     getrandom::fill(entropy.as_mut_slice()).context("failed to collect OS entropy")?;
@@ -41,7 +41,7 @@ fn collect_os_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
 
 fn collect_openpgp_card_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<Vec<u8>>> {
     info!(
-        "Collecting {} bits of OpenPGP smart card entropy...",
+        "💳 Collecting {} bits of OpenPGP smart card entropy...",
         byte_count * 8
     );
 
@@ -49,8 +49,15 @@ fn collect_openpgp_card_entropy(byte_count: usize) -> anyhow::Result<Zeroizing<V
         match try_collect_openpgp_card_entropy(byte_count) {
             Ok(entropy) => return Ok(entropy),
             Err(error) => {
-                info!("Unable to collect OpenPGP smart card entropy: {error:#}");
-                info!("Connect exactly one OpenPGP smart card and press Enter to retry");
+                info!("❌ Unable to collect OpenPGP smart card entropy: {error:#}");
+
+                let mut stderr = io::stderr().lock();
+                write!(
+                    stderr,
+                    "💳 Connect exactly one OpenPGP smart card and press Enter to retry"
+                )?;
+                stderr.flush()?;
+                drop(stderr);
 
                 let mut input = String::new();
                 ensure!(
@@ -145,9 +152,9 @@ fn collect_dice_entropy(byte_count: usize, sides: u32) -> anyhow::Result<Zeroizi
 
     let bit_count = byte_count * 8;
     let expected_rolls = expected_dice_rolls(byte_count, sides);
-    info!("Collecting {bit_count} bits of dice entropy using d{sides} rolls...");
-    info!("Enter dice rolls separated by spaces:");
+    info!("🎲 Collecting {bit_count} bits of dice entropy using d{sides} rolls...");
     warn!("Dice rolls are visible and may remain in terminal scrollback or session logs.");
+    info!("🎲 Enter dice rolls separated by spaces:");
 
     let mut value = Zeroizing::new(U512::ZERO);
     let mut range = Zeroizing::new(U512::ONE);
@@ -159,7 +166,10 @@ fn collect_dice_entropy(byte_count: usize, sides: u32) -> anyhow::Result<Zeroizi
         for roll in rolls.iter().copied() {
             entered += 1;
             if let Some(entropy) = add_dice_roll(&mut value, &mut range, roll, sides, byte_count) {
-                info!("{}: Finished.", roll_status(entered, expected_rolls, sides));
+                info!(
+                    "🎲 {}: Finished.",
+                    roll_status(entered, expected_rolls, sides)
+                );
                 return Ok(entropy);
             }
         }
@@ -172,7 +182,7 @@ fn prompt_for_dice_rolls(
     sides: u32,
 ) -> anyhow::Result<Zeroizing<Vec<u32>>> {
     let mut stderr = io::stderr().lock();
-    write!(stderr, "{}: ", roll_status(entered, expected, sides))?;
+    write!(stderr, "🎲 {}: ", roll_status(entered, expected, sides))?;
     stderr.flush()?;
 
     let stdin = io::stdin();
@@ -189,7 +199,7 @@ fn prompt_for_dice_rolls(
             .ok()
             .filter(|roll| (1..=sides).contains(roll))
         else {
-            info!("Invalid dice input discarded, every roll must be between 1 and {sides}.");
+            info!("❌ Invalid dice input discarded, every roll must be between 1 and {sides}.");
             return Ok(Zeroizing::new(Vec::new()));
         };
         rolls.push(roll);
@@ -267,7 +277,7 @@ fn combine_entropy(
     byte_count: usize,
 ) -> anyhow::Result<Zeroizing<Vec<u8>>> {
     info!(
-        "Combining entropy from {} sources to produce {} bits of final entropy...",
+        "🔀 Combining entropy from {} sources to produce {} bits of final entropy...",
         sources.len(),
         byte_count * 8
     );

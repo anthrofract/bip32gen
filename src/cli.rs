@@ -170,7 +170,10 @@ pub(crate) fn init_logging() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format(|buffer, record| match record.level() {
             log::Level::Error => writeln!(buffer, "ERROR: {}", record.args()),
-            log::Level::Warn => writeln!(buffer, "WARNING: {}", record.args()),
+            log::Level::Warn => {
+                let style = buffer.default_level_style(log::Level::Error);
+                writeln!(buffer, "🚨 {style}WARNING{style:#}: {}", record.args())
+            }
             _ => writeln!(buffer, "{}", record.args()),
         })
         .init();

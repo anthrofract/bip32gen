@@ -18,7 +18,7 @@ pub(crate) fn run(config: crate::cli::Config) -> anyhow::Result<()> {
         "Run this program only in a trusted, ephemeral, offline environment, such as in Tails OS."
     );
     info!(
-        "Generating a {}-word mnemonic from {} bits ({} bytes) of entropy per source.",
+        "🏁 Generating a {}-word mnemonic from {} bits ({} bytes) of entropy per source.",
         config.words.word_count(),
         byte_count * 8,
         byte_count,
@@ -30,7 +30,7 @@ pub(crate) fn run(config: crate::cli::Config) -> anyhow::Result<()> {
 }
 
 fn construct_mnemonic(entropy: &[u8]) -> anyhow::Result<Mnemonic> {
-    info!("Constructing mnemonic...");
+    info!("📄 Constructing mnemonic...");
     Mnemonic::from_entropy(entropy).context("failed to generate BIP-39 mnemonic")
 }
 
@@ -43,18 +43,29 @@ fn write_output(config: &crate::cli::Config, mnemonic: &Mnemonic) -> anyhow::Res
 
     if let Some(pgp_pubkey) = &config.pgp_pubkey {
         let encrypted = encrypt_with_gpg(&seed_phrase, pgp_pubkey)?;
-        write_file(&config.output_path, &encrypted, config.overwrite)
+        write_file(&config.output_path, &encrypted, config.overwrite)?;
     } else {
         write_file(
             &config.output_path,
             seed_phrase.as_bytes(),
             config.overwrite,
-        )
+        )?;
     }
+
+    let description = if config.pgp_pubkey.is_some() {
+        "encrypted mnemonic"
+    } else {
+        "mnemonic"
+    };
+    info!(
+        "✅ Wrote {description} to '{}'.",
+        config.output_path.display()
+    );
+    Ok(())
 }
 
 fn encrypt_with_gpg(seed_phrase: &str, pgp_pubkey: &Path) -> anyhow::Result<Vec<u8>> {
-    info!("Encrypting seed phrase with GPG");
+    info!("🔒 Encrypting seed phrase with GPG...");
 
     let mut child = Command::new("gpg")
         .args([
@@ -115,10 +126,6 @@ fn write_file(output_path: &Path, contents: &[u8], overwrite: bool) -> anyhow::R
     file.sync_all()
         .with_context(|| format!("failed to sync output file '{}'", output_path.display()))?;
 
-    info!(
-        "Successfully wrote mnemonic to '{}'.",
-        output_path.display()
-    );
     Ok(())
 }
 
