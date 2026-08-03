@@ -31,3 +31,22 @@ Options:
   -V, --version
           Print version
 ```
+
+## Example run
+
+```text
+❯ bip39gen --pgp-pubkey pubkey.asc
+🚨 WARNING: Run this program only in a trusted, ephemeral, offline environment, such as in Tails OS.
+🏁 Generating a 12-word mnemonic from 128 bits (16 bytes) of entropy per source.
+💻 Collecting 128 bits of OS entropy...
+💳 Collecting 128 bits of OpenPGP smart card entropy...
+🎲 Collecting 128 bits of dice entropy using d6 rolls...
+🚨 WARNING: Dice rolls are visible and may remain in terminal scrollback or session logs.
+🎲 Enter dice rolls separated by spaces:
+🎲 [0 d6 rolls entered of ~50.182]:  1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6 1 2 3 4 5 6
+🎲 [50 d6 rolls entered of ~50.182]: Finished.
+🔀 Combining entropy from 3 sources to produce 128 bits of final entropy...
+📄 Constructing mnemonic...
+🔒 Encrypting seed phrase with GPG...
+✅ Wrote encrypted mnemonic to 'seed.txt.asc'.
+```
