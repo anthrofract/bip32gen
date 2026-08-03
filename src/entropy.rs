@@ -4,8 +4,8 @@ use std::{
 };
 
 use anyhow::{Context, bail, ensure};
-use crypto_bigint::U512;
-use log::info;
+use crypto_bigint::{U512, Word};
+use log::{info, warn};
 use sha3::{Digest, Sha3_256};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -87,9 +87,17 @@ fn try_collect_openpgp_card_entropy(byte_count: usize) -> anyhow::Result<Zeroizi
         "GPG returned an invalid smart card serial number"
     );
 
+    // Pre-flight the card selection without a datafile so any ERR response is
+    // visible; in datafile mode gpg-connect-agent swallows ERR lines entirely.
     let select = format!("SCD SERIALNO --demand={serial} openpgp");
+    run_gpg_connect_agent(&[select.as_str(), "/bye"])
+        .with_context(|| format!("failed to select smart card {serial}"))?;
+
+    // Keep the selection and RANDOM in one invocation so they share a single
+    // scdaemon session; a separate invocation would auto-select whatever card
+    // is present instead of the serial demanded above.
     let random = format!("SCD RANDOM {byte_count}");
-    let output = Command::new("gpg-connect-agent")
+    let mut output = Command::new("gpg-connect-agent")
         .arg("--no-history")
         .arg("/datafile -")
         .arg(select)
@@ -97,16 +105,9 @@ fn try_collect_openpgp_card_entropy(byte_count: usize) -> anyhow::Result<Zeroizi
         .arg("/bye")
         .output()
         .context("failed to start gpg-connect-agent")?;
-    let entropy = Zeroizing::new(output.stdout);
+    let entropy = Zeroizing::new(std::mem::take(&mut output.stdout));
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stderr = stderr.trim();
-        if stderr.is_empty() {
-            bail!("gpg-connect-agent failed with status {}", output.status);
-        }
-        bail!("gpg-connect-agent failed: {stderr}");
-    }
+    crate::process::check_command_output("gpg-connect-agent", &output)?;
 
     ensure!(
         entropy.len() == byte_count,
@@ -123,14 +124,7 @@ fn run_gpg_connect_agent(commands: &[&str]) -> anyhow::Result<std::process::Outp
         .output()
         .context("failed to start gpg-connect-agent")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stderr = stderr.trim();
-        if stderr.is_empty() {
-            bail!("gpg-connect-agent failed with status {}", output.status);
-        }
-        bail!("gpg-connect-agent failed: {stderr}");
-    }
+    crate::process::check_command_output("gpg-connect-agent", &output)?;
 
     if let Some(error) = output
         .stdout
@@ -153,7 +147,7 @@ fn collect_dice_entropy(byte_count: usize, sides: u32) -> anyhow::Result<Zeroizi
     let expected_rolls = expected_dice_rolls(byte_count, sides);
     info!("Collecting {bit_count} bits of dice entropy using d{sides} rolls...");
     info!("Enter dice rolls separated by spaces:");
-    info!("Warning: Dice rolls are visible and may remain in terminal scrollback or session logs.");
+    warn!("Dice rolls are visible and may remain in terminal scrollback or session logs.");
 
     let mut value = Zeroizing::new(U512::ZERO);
     let mut range = Zeroizing::new(U512::ONE);
@@ -230,7 +224,7 @@ fn expected_dice_rolls(byte_count: usize, sides: u32) -> f64 {
 
 fn u512_to_f64(value: U512) -> f64 {
     value.to_words().iter().rev().fold(0.0, |result, word| {
-        result * 2f64.powi(usize::BITS as i32) + *word as f64
+        result * 2f64.powi(Word::BITS as i32) + *word as f64
     })
 }
 
@@ -302,7 +296,9 @@ impl WordCount {
     pub(crate) fn entropy_bytes(self) -> usize {
         match self {
             Self::Twelve => 16,
+            Self::Fifteen => 20,
             Self::Eighteen => 24,
+            Self::TwentyOne => 28,
             Self::TwentyFour => 32,
         }
     }
@@ -316,10 +312,14 @@ mod tests {
     fn calculates_expected_dice_rolls() {
         let cases = [
             (16, 6, 50.181_976_529_858_88),
+            (20, 6, 62.208_379_562_611_8),
             (24, 6, 75.231_559_236_689_88),
+            (28, 6, 87.487_062_371_999_37),
             (32, 6, 100.140_223_540_677_41),
             (16, 20, 30.051_151_539_784_332),
+            (20, 20, 38.043_400_201_043),
             (24, 20, 45.108_943_717_772_02),
+            (28, 20, 52.413_977_244_832_26),
             (32, 20, 60.096_974_045_788_9),
         ];
 
@@ -358,5 +358,41 @@ mod tests {
 
         assert_eq!(rejected, 16);
         assert!(counts.iter().all(|count| *count == 5));
+    }
+
+    #[test]
+    fn combines_entropy_deterministically() {
+        // Expected outputs are SHA3-256(be64(byte_count) || sources...) truncated,
+        // computed with a reference SHA3-256 implementation (Python hashlib).
+        let sources = [
+            Zeroizing::new((0..16).collect::<Vec<u8>>()),
+            Zeroizing::new((16..32).collect::<Vec<u8>>()),
+        ];
+        let combined = combine_entropy(&sources, 16).unwrap();
+        assert_eq!(
+            combined.as_slice(),
+            [
+                0x7d, 0x01, 0x56, 0xa4, 0xb8, 0x3e, 0x45, 0x4b, 0xe7, 0x5d, 0x7b, 0x8f, 0x07, 0xfc,
+                0xc7, 0x61,
+            ]
+        );
+
+        let sources = [Zeroizing::new((0..32).collect::<Vec<u8>>())];
+        let combined = combine_entropy(&sources, 32).unwrap();
+        assert_eq!(
+            combined.as_slice(),
+            [
+                0x3c, 0xbd, 0xc8, 0x06, 0x02, 0x02, 0xd4, 0x8d, 0xcb, 0x8f, 0x75, 0xab, 0x0b, 0x85,
+                0xa2, 0x68, 0x55, 0x4e, 0x5c, 0x7c, 0x60, 0xc7, 0x13, 0x7e, 0x51, 0xa4, 0x4c, 0x5f,
+                0x2f, 0xac, 0x2b, 0xde,
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_entropy_sources() {
+        assert!(combine_entropy(&[], 16).is_err());
+        assert!(combine_entropy(&[Zeroizing::new(vec![0; 15])], 16).is_err());
+        assert!(combine_entropy(&[Zeroizing::new(vec![0; 17])], 16).is_err());
     }
 }

@@ -6,16 +6,16 @@ use std::{
     process::{Command, Stdio},
 };
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use bip39::Mnemonic;
-use log::info;
+use log::{info, warn};
 
 use crate::secret_string::SecretString;
 
 pub(crate) fn run(config: crate::cli::Config) -> anyhow::Result<()> {
     let byte_count = config.words.entropy_bytes();
-    info!(
-        "Warning: Run this program only in a trusted, ephemeral, offline environment, such as in Tails OS."
+    warn!(
+        "Run this program only in a trusted, ephemeral, offline environment, such as in Tails OS."
     );
     info!(
         "Generating a {}-word mnemonic from {} bits ({} bytes) of entropy per source.",
@@ -86,15 +86,7 @@ fn encrypt_with_gpg(seed_phrase: &str, pgp_pubkey: &Path) -> anyhow::Result<Vec<
     }
 
     let output = child.wait_with_output().context("failed to wait for GPG")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stderr = stderr.trim();
-        if stderr.is_empty() {
-            bail!("GPG encryption failed with status {}", output.status);
-        }
-        bail!("GPG encryption failed: {stderr}");
-    }
-
+    crate::process::check_command_output("GPG encryption", &output)?;
     Ok(output.stdout)
 }
 
@@ -134,7 +126,9 @@ impl crate::cli::WordCount {
     fn word_count(self) -> usize {
         match self {
             Self::Twelve => 12,
+            Self::Fifteen => 15,
             Self::Eighteen => 18,
+            Self::TwentyOne => 21,
             Self::TwentyFour => 24,
         }
     }

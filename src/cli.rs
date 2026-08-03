@@ -3,7 +3,6 @@ use std::{
     io::Write,
     os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
 };
 
 use anyhow::{Context, ensure};
@@ -63,8 +62,12 @@ pub(crate) struct Config {
 pub(crate) enum WordCount {
     #[value(name = "12")]
     Twelve,
+    #[value(name = "15")]
+    Fifteen,
     #[value(name = "18")]
     Eighteen,
+    #[value(name = "21")]
+    TwentyOne,
     #[value(name = "24")]
     TwentyFour,
 }
@@ -85,10 +88,10 @@ impl TryFrom<Cli> for Config {
 
         // Check optional runtime dependencies before collecting any entropy.
         if cli.openpgp_card_entropy {
-            validate_command("gpg-connect-agent")?;
+            crate::process::validate_command("gpg-connect-agent")?;
         }
         if cli.pgp_pubkey.is_some() {
-            validate_command("gpg")?;
+            crate::process::validate_command("gpg")?;
         }
 
         let output_path = cli.output.unwrap_or_else(|| {
@@ -163,25 +166,13 @@ impl TryFrom<Cli> for Config {
     }
 }
 
-fn validate_command(command: &str) -> anyhow::Result<()> {
-    let status = Command::new(command)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .with_context(|| format!("required command '{command}' was not found on PATH"))?;
-
-    ensure!(
-        status.success(),
-        "required command '{command}' failed with status {status}"
-    );
-    Ok(())
-}
-
 pub(crate) fn init_logging() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format(|buffer, record| writeln!(buffer, "{}", record.args()))
+        .format(|buffer, record| match record.level() {
+            log::Level::Error => writeln!(buffer, "ERROR: {}", record.args()),
+            log::Level::Warn => writeln!(buffer, "WARNING: {}", record.args()),
+            _ => writeln!(buffer, "{}", record.args()),
+        })
         .init();
 }
 

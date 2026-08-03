@@ -1,5 +1,9 @@
+#[cfg(not(unix))]
+compile_error!("bip39gen only supports unix-like operating systems");
+
 mod cli;
 mod entropy;
+mod process;
 mod run;
 mod secret_string;
 

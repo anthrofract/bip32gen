@@ -19,7 +19,7 @@ Options:
       --openpgp-card <OPENPGP_CARD_ENTROPY>
           Use entropy from an OpenPGP smart card such as a YubiKey [default: true] [possible values: true, false]
       --words <WORDS>
-          Number of words in the generated mnemonic [default: 12] [possible values: 12, 18, 24]
+          Number of words in the generated mnemonic [default: 12] [possible values: 12, 15, 18, 21, 24]
       --pgp-pubkey <PATH>
           OpenPGP public key used to encrypt the mnemonic with GPG
   -o, --output <PATH>
