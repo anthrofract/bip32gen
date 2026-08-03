@@ -16,12 +16,18 @@ impl SecretString {
     }
 
     pub(crate) fn push_str(&mut self, value: &str) -> anyhow::Result<()> {
+        self.push_ascii(value.as_bytes())
+    }
+
+    fn push_ascii(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
+        ensure!(bytes.is_ascii(), "secret string must be ASCII");
         ensure!(
-            value.len() <= Self::MAX_BYTES - self.0.len(),
+            bytes.len() <= Self::MAX_BYTES - self.0.len(),
             "secret string exceeds {} bytes",
             Self::MAX_BYTES
         );
-        self.0.push_str(value);
+        self.0
+            .push_str(str::from_utf8(bytes).expect("ASCII is valid UTF-8"));
         Ok(())
     }
 
@@ -36,8 +42,7 @@ impl SecretString {
 
             let newline = buffer.iter().position(|byte| *byte == b'\n');
             let end = newline.unwrap_or(buffer.len());
-            let chunk = &buffer[..end];
-            line.push_str(str::from_utf8(chunk).context("secret input is not valid UTF-8")?)?;
+            line.push_ascii(&buffer[..end])?;
 
             stdin.consume(end + usize::from(newline.is_some()));
             if newline.is_some() {
